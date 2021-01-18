@@ -67,6 +67,7 @@ public class AsyncTestApplication {
             Completion
                     .from(rt.getForEntity(URL1, String.class, "hello" + idx))
                     .andApply(s->rt.getForEntity(URL2, String.class, s.getBody()))
+                    .andError(e->dr.setErrorResult(e.toString()))
                     .andAccept(s->dr.setResult(s.getBody()));
 
             return dr;
@@ -83,6 +84,24 @@ public class AsyncTestApplication {
         @Override
         void run(ResponseEntity<String> value) {
             con.accept(value);
+        }
+    }
+
+    public static class ErrorCompletion extends Completion {
+
+        Consumer<Throwable> econ;
+        public ErrorCompletion(Consumer<Throwable> econ) {
+            this.econ = econ;
+        }
+
+        @Override
+        void run(ResponseEntity<String> value) {
+            if(next != null) next.run(value);
+        }
+
+        @Override
+        void error(Throwable e) {
+            econ.accept(e);
         }
     }
 
@@ -111,6 +130,14 @@ public class AsyncTestApplication {
             this.next = c;
         }
 
+        public Completion andError(Consumer<Throwable> econ) {
+
+            Completion c = new ErrorCompletion(econ);
+            this.next = c;
+
+            return c;
+        }
+
         public Completion andApply(Function<ResponseEntity<String>, ListenableFuture<ResponseEntity<String>>> fn) {
 
             Completion c = new ApplyCompletion(fn);
@@ -134,6 +161,7 @@ public class AsyncTestApplication {
 
         void error(Throwable e) {
 
+            if(next != null) next.error(e);
         }
 
         void complete(ResponseEntity<String> s) {
