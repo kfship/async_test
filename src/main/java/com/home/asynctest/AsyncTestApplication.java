@@ -20,6 +20,7 @@ import org.springframework.web.client.AsyncRestTemplate;
 import org.springframework.web.context.request.async.DeferredResult;
 
 import java.util.function.Consumer;
+import java.util.function.Function;
 
 @SpringBootApplication
 @Slf4j
@@ -65,6 +66,7 @@ public class AsyncTestApplication {
 
             Completion
                     .from(rt.getForEntity(URL1, String.class, "hello" + idx))
+                    .andApply(s->rt.getForEntity(URL2, String.class, s.getBody()))
                     .andAccept(s->dr.setResult(s.getBody()));
 
             return dr;
@@ -75,18 +77,31 @@ public class AsyncTestApplication {
     public static class Completion {
 
         Completion next;
+
+        public Completion() {}
+
         Consumer<ResponseEntity<String>> con;
         public Completion(Consumer<ResponseEntity<String>> con) {
             this.con = con;
         }
 
-        public Completion() {}
-
+        Function<ResponseEntity<String>, ListenableFuture<ResponseEntity<String>>> fn;
+        public Completion(Function<ResponseEntity<String>, ListenableFuture<ResponseEntity<String>>> fn) {
+            this.fn = fn;
+        }
 
         public void andAccept(Consumer<ResponseEntity<String>> con) {
 
             Completion c = new Completion(con);
             this.next = c;
+        }
+
+        public Completion andApply(Function<ResponseEntity<String>, ListenableFuture<ResponseEntity<String>>> fn) {
+
+            Completion c = new Completion(fn);
+            this.next = c;
+
+            return c;
         }
 
         public static Completion from(ListenableFuture<ResponseEntity<String>> lf) {
@@ -112,7 +127,12 @@ public class AsyncTestApplication {
         }
 
         void run(ResponseEntity<String> value) {
-            if(con != null) con.accept(value);
+            if(con != null) {
+                con.accept(value);
+            } else if(fn != null) {
+                ListenableFuture<ResponseEntity<String>> lf = fn.apply(value);
+                lf.addCallback(s->complete(s), e->error(e));
+            }
         }
     }
 
