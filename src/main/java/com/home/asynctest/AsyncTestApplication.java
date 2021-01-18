@@ -36,32 +36,27 @@ public class AsyncTestApplication {
         @GetMapping("/rest")
         public DeferredResult<String> rest(String idx) {
 
+            final String URL1 = "http://localhost:8081/service?req={req}";
+            final String URL2 = "http://localhost:8081/service2?req={req}";
+
             DeferredResult<String> dr = new DeferredResult<>();
 
-            ListenableFuture<ResponseEntity<String>> f1 = rt.getForEntity("http://localhost:8081/service?req={req}", String.class, "hello" + idx);
+            ListenableFuture<ResponseEntity<String>> f1 = rt.getForEntity(URL1, String.class, "hello" + idx);
             //f1.get() 이렇게 값을 가져오면 blocking 되기 때문에 의미 없다
 
             f1.addCallback(s->{
-
-                ListenableFuture<ResponseEntity<String>> f2 = rt.getForEntity("http://localhost:8081/service2?req={req}", String.class, s.getBody());
-
+                ListenableFuture<ResponseEntity<String>> f2 = rt.getForEntity(URL2, String.class, s.getBody());
                 f2.addCallback(s2->{
-
                     ListenableFuture<String> f3 = myService.work(s2.getBody());
-
                     f3.addCallback(s3->{
-
                         dr.setResult(s3);
                     }, e-> {
-
                         dr.setErrorResult(e.getMessage());
                     });
                 }, e->{
-
                     dr.setErrorResult(e.getMessage());
                 });
             }, e-> {
-
                 dr.setErrorResult(e.getMessage());
             });
 
