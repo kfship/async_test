@@ -226,6 +226,5 @@ public class AsyncTestApplication {
 	public static void main(String[] args) {
 		SpringApplication.run(AsyncTestApplication.class, args);
 	}
-
 }
 
