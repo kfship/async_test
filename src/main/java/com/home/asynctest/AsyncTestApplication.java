@@ -73,32 +73,47 @@ public class AsyncTestApplication {
         }
     }
 
+    public static class AcceptCompletion extends Completion {
+
+        Consumer<ResponseEntity<String>> con;
+        public AcceptCompletion(Consumer<ResponseEntity<String>> con) {
+            this.con = con;
+        }
+
+        @Override
+        void run(ResponseEntity<String> value) {
+            con.accept(value);
+        }
+    }
+
+    public static class ApplyCompletion extends Completion {
+
+        Function<ResponseEntity<String>, ListenableFuture<ResponseEntity<String>>> fn;
+        public ApplyCompletion(Function<ResponseEntity<String>, ListenableFuture<ResponseEntity<String>>> fn) {
+            this.fn = fn;
+        }
+
+        @Override
+        void run(ResponseEntity<String> value) {
+            ListenableFuture<ResponseEntity<String>> lf = fn.apply(value);
+            lf.addCallback(s->complete(s), e->error(e));
+        }
+    }
+
     @Service
     public static class Completion {
 
         Completion next;
 
-        public Completion() {}
-
-        Consumer<ResponseEntity<String>> con;
-        public Completion(Consumer<ResponseEntity<String>> con) {
-            this.con = con;
-        }
-
-        Function<ResponseEntity<String>, ListenableFuture<ResponseEntity<String>>> fn;
-        public Completion(Function<ResponseEntity<String>, ListenableFuture<ResponseEntity<String>>> fn) {
-            this.fn = fn;
-        }
-
         public void andAccept(Consumer<ResponseEntity<String>> con) {
 
-            Completion c = new Completion(con);
+            Completion c = new AcceptCompletion(con);
             this.next = c;
         }
 
         public Completion andApply(Function<ResponseEntity<String>, ListenableFuture<ResponseEntity<String>>> fn) {
 
-            Completion c = new Completion(fn);
+            Completion c = new ApplyCompletion(fn);
             this.next = c;
 
             return c;
@@ -122,17 +137,11 @@ public class AsyncTestApplication {
         }
 
         void complete(ResponseEntity<String> s) {
-
             if(next != null) next.run(s);
         }
 
         void run(ResponseEntity<String> value) {
-            if(con != null) {
-                con.accept(value);
-            } else if(fn != null) {
-                ListenableFuture<ResponseEntity<String>> lf = fn.apply(value);
-                lf.addCallback(s->complete(s), e->error(e));
-            }
+
         }
     }
 
