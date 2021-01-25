@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.client.AsyncRestTemplate;
 import org.springframework.web.context.request.async.DeferredResult;
 
+import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
@@ -42,7 +43,11 @@ public class AsyncTestApplication {
             final String URL1 = "http://localhost:8081/service?req={req}";
             final String URL2 = "http://localhost:8081/service2?req={req}";
 
+            DeferredResult<String> dr = new DeferredResult<>();
 
+//---------------------------------------------------------------------------------------------------------------------
+// 초기 구현
+//---------------------------------------------------------------------------------------------------------------------
 //            ListenableFuture<ResponseEntity<String>> f1 = rt.getForEntity(URL1, String.class, "hello" + idx);
 //            //f1.get() 이렇게 값을 가져오면 blocking 되기 때문에 의미 없다
 //
@@ -62,17 +67,33 @@ public class AsyncTestApplication {
 //                dr.setErrorResult(e.getMessage());
 //            });
 
-            DeferredResult<String> dr = new DeferredResult<>();
+//---------------------------------------------------------------------------------------------------------------------
+// 개선된 버전 (자체 library)
+//---------------------------------------------------------------------------------------------------------------------
+//            Completion
+//                    .from(rt.getForEntity(URL1, String.class, "hello" + idx))
+//                    .andApply(s->rt.getForEntity(URL2, String.class, s.getBody()))
+//                    .andApply(s->myService.work(s.getBody()))
+//                    .andError(e->dr.setErrorResult(e.toString()))
+//                    .andAccept(s->dr.setResult(s));
 
-            Completion
-                    .from(rt.getForEntity(URL1, String.class, "hello" + idx))
-                    .andApply(s->rt.getForEntity(URL2, String.class, s.getBody()))
-                    .andApply(s->myService.work(s.getBody()))
-                    .andError(e->dr.setErrorResult(e.toString()))
-                    .andAccept(s->dr.setResult(s));
+            toCF(rt.getForEntity(URL1, String.class, "hello" + idx))
+                    .thenCompose(s -> toCF(rt.getForEntity(URL2, String.class, s.getBody())))  //thenApply는 값을 리턴하기 때문에 CompletableFuture를 리턴하기 위해 thenCompose 사용
+                    //.thenCompose(s2 -> toCF(myService.work(s2.getBody())))
+                    .thenApplyAsync(s2 -> myService.work(s2.getBody()))  //myService가 동기로 작동하는 경우에 thenApplyAsync 사용하여 별도의 쓰레드에서 실행
+                    .thenAccept(s3 -> dr.setResult(s3))
+                    .exceptionally(e -> {dr.setErrorResult(e.getMessage()); return (Void)null;} );
 
             return dr;
         }
+
+        <T>CompletableFuture<T> toCF(ListenableFuture<T> lf) {
+
+            CompletableFuture<T> cf = new CompletableFuture<T>();
+            lf.addCallback(s -> cf.complete(s), e -> cf.completeExceptionally(e));
+            return cf;
+        }
+
     }
 
     public static class AcceptCompletion<S> extends Completion<S, Void> {
@@ -174,11 +195,18 @@ public class AsyncTestApplication {
         }
     }
 
+//    @Service
+//    public static class MyService {
+//        @Async
+//        public ListenableFuture<String> work(String req) {
+//            return new AsyncResult<>(req + "/asyncwork");
+//        }
+//    }
+
     @Service
     public static class MyService {
-        @Async
-        public ListenableFuture<String> work(String req) {
-            return new AsyncResult<>(req + "/asyncwork");
+        public String work(String req) {
+            return req + "/asyncwork";
         }
     }
 
